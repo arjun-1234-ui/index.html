@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attendance tracker</title>
+<style>
+:root{--bg:#f7f6f3;--card:#fff;--tx:#1f1f1d;--mu:#6b6a65;--bd:#e0ded8;--ac:#0f6e56;--acbg:#e1f5ee;--ok:#3b6d11;--okbg:#eaf3de;--bad:#a32d2d;--badbg:#fceaea}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1c1a;--card:#262624;--tx:#ecebe6;--mu:#a3a29b;--bd:#3a3a37;--ac:#5dcaa5;--acbg:#08332a;--ok:#97c459;--okbg:#1d2b0e;--bad:#f09595;--badbg:#3a1616}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:16px;max-width:720px;margin:0 auto}
+h1{font-size:22px;font-weight:500;margin:0 0 12px}
+h2{font-size:17px;font-weight:500;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sp{justify-content:space-between}
+.mu{color:var(--mu);font-size:14px}
+nav{display:flex;gap:8px;margin-bottom:12px}
+nav button{flex:1}
+button,input,select{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:8px 12px}
+button{cursor:pointer}
+button.on,button.pri{background:var(--ac);color:var(--bg);border-color:var(--ac)}
+button.x{color:var(--bad);padding:4px 10px}
+input[type=number]{width:70px}
+.pct{font-size:28px;font-weight:500}
+.good{color:var(--ok)}.low{color:var(--bad)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
+.st{background:var(--bg);border-radius:8px;padding:8px;text-align:center}
+.st b{display:block;font-size:20px;font-weight:500}
+.st .mu{font-size:12px}
+.ctr{display:flex;gap:4px;justify-content:center;margin-top:4px}
+.ctr button{padding:2px 9px;font-size:14px}
+.bar{height:6px;background:var(--bd);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ac)}
+.bar i.low{background:var(--bad)}
+.tag{display:inline-block;font-size:13px;padding:2px 8px;border-radius:6px}
+.tag.good{background:var(--okbg)}.tag.low{background:var(--badbg)}
+.slot{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--bd);flex-wrap:wrap}
+.today{outline:2px solid var(--ac)}
+.hide{display:none}
+</style>
+</head>
+<body>
+<h1>Attendance tracker</h1>
+<nav>
+<button id="tA" class="on" data-act="tab" data-t="A">Attendance</button>
+<button id="tT" data-act="tab" data-t="T">Timetable</button>
+</nav>
+
+<section id="A">
+<div class="card" id="overall"></div>
+<div class="card" id="todayCard"></div>
+<div class="card">
+<h2>Add subject</h2>
+<div class="row"><input id="subName" placeholder="e.g. ENT" style="flex:1;min-width:140px"><button class="pri" data-act="addsub">Add</button></div>
+</div>
+<div id="subjects"></div>
+</section>
+
+<section id="T" class="hide">
+<div class="card">
+<h2>Add class to timetable</h2>
+<div class="row">
+<select id="slDay"></select>
+<select id="slSub"></select>
+</div>
+<div class="row" style="margin-top:8px">
+<input type="time" id="slStart" value="09:00">
+<span class="mu">to</span>
+<input type="time" id="slEnd" value="10:00">
+<button class="pri" data-act="addslot">Add</button>
+</div>
+</div>
+<div id="week"></div>
+</section>
+
+<script>
+var DAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+var ORDER=[1,2,3,4,5,6];
+var KEY="attendance-tracker-v1";
+var S=load();
+
+function load(){
+  try{var r=localStorage.getItem(KEY);if(r){var d=JSON.parse(r);if(d&&d.subjects)return d;}}catch(e){}
+  return {target:75,subjects:[
+    {id:1,name:"ENT",a:0,s:0,c:0},
+    {id:2,name:"Ophthalmology",a:0,s:0,c:0},
+    {id:3,name:"Community Medicine",a:0,s:0,c:0},
+    {id:4,name:"Forensic Medicine",a:0,s:0,c:0}
+  ],slots:[]};
+}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+function esc(t){var d=document.createElement("div");d.textContent=t;return d.innerHTML;}
+function pct(a,s){var t=a+s;return t?a/t*100:null;}
+function fmt(t){var p=t.split(":"),h=+p[0],m=p[1],ap=h>=12?"PM":"AM";h=h%12||12;return h+":"+m+" "+ap;}
+function tgt(){return Math.min(99,Math.max(1,+S.target||75));}
+
+function advice(a,s){
+  var t=a+s,r=tgt()/100;
+  if(!t)return {cls:"",txt:"No classes yet"};
+  if(a/t>=r){var n=Math.floor(a/r-t+1e-9);return {cls:"good",txt:"Can skip "+n+" more"};}
+  var need=Math.ceil((r*t-a)/(1-r)-1e-9);
+  return {cls:"low",txt:"Attend next "+need+" in a row"};
+}
+
+function render(){
+  var A=0,Sk=0,C=0;
+  S.subjects.forEach(function(x){A+=x.a;Sk+=x.s;C+=x.c;});
+  var op=pct(A,Sk),ad=advice(A,Sk),oc=op===null?"":(op>=tgt()?"good":"low");
+  document.getElementById("overall").innerHTML=
+    '<div class="row sp"><div><div class="mu">Overall attendance</div><div class="pct '+oc+'">'+(op===null?"–":op.toFixed(1)+"%")+'</div></div>'+
+    '<div class="mu">Target <input type="number" min="1" max="99" value="'+tgt()+'" data-act="target"> %</div></div>'+
+    '<div class="stats"><div class="st"><b>'+(A+Sk)+'</b><span class="mu">Total held</span></div><div class="st"><b>'+A+'</b><span class="mu">Attended</span></div><div class="st"><b>'+Sk+'</b><span class="mu">Skipped</span></div><div class="st"><b>'+C+'</b><span class="mu">Cancelled</span></div></div>'+
+    '<span class="tag '+ad.cls+'">'+ad.txt+'</span>';
+
+  var h="";
+  if(!S.subjects.length)h='<div class="card mu">No subjects yet. Add one above.</div>';
+  S.subjects.forEach(function(x){
+    var p=pct(x.a,x.s),a=advice(x.a,x.s),c=p===null?"":(p>=tgt()?"good":"low");
+    h+='<div class="card"><div class="row sp"><h2 style="margin:0">'+esc(x.name)+'</h2><button class="x" data-act="delsub" data-id="'+x.id+'">Remove</button></div>'+
+    '<div class="row sp" style="margin:6px 0"><span class="pct '+c+'">'+(p===null?"–":p.toFixed(1)+"%")+'</span><span class="tag '+a.cls+'">'+a.txt+'</span></div>'+
+    '<div class="bar"><i class="'+c+'" style="width:'+(p===null?0:Math.min(100,p))+'%"></i></div>'+
+    '<div class="stats"><div class="st"><b>'+(x.a+x.s)+'</b><span class="mu">Total held</span></div>'+
+    ctr(x,"a","Attended")+ctr(x,"s","Skipped")+ctr(x,"c","Cancelled")+'</div></div>';
+  });
+  document.getElementById("subjects").innerHTML=h;
+
+  var now=new Date().getDay(),ts=S.slots.filter(function(z){return z.day===now;}).sort(byTime),th="<h2>Today ("+DAYS[now]+")</h2>";
+  if(!ts.length)th+='<div class="mu">No classes in your timetable for today.</div>';
+  ts.forEach(function(z){
+    var sub=subOf(z.sid);if(!sub)return;
+    th+='<div class="slot"><div><b>'+esc(sub.name)+'</b><div class="mu">'+fmt(z.start)+' – '+fmt(z.end)+'</div></div>'+
+    '<div class="row"><button data-act="mark" data-id="'+sub.id+'" data-k="a">Attended</button><button data-act="mark" data-id="'+sub.id+'" data-k="s">Skipped</button><button data-act="mark" data-id="'+sub.id+'" data-k="c">Cancelled</button></div></div>';
+  });
+  document.getElementById("todayCard").innerHTML=th;
+
+  var opts="";S.subjects.forEach(function(x){opts+='<option value="'+x.id+'">'+esc(x.name)+'</option>';});
+  var sel=document.getElementById("slSub"),pv=sel.value;sel.innerHTML=opts||'<option value="">Add a subject first</option>';if(pv)sel.value=pv;
+  var dsel=document.getElementById("slDay");
+  if(!dsel.options.length){ORDER.forEach(function(d){dsel.add(new Option(DAYS[d],d));});}
+
+  var w="";
+  ORDER.forEach(function(d){
+    var ds=S.slots.filter(function(z){return z.day===d;}).sort(byTime);
+    w+='<div class="card'+(d===now?' today':'')+'"><h2>'+DAYS[d]+(d===now?' <span class="mu">(today)</span>':'')+'</h2>';
+    if(!ds.length)w+='<div class="mu">No classes</div>';
+    ds.forEach(function(z){
+      var sub=subOf(z.sid);
+      w+='<div class="slot"><div><b>'+(sub?esc(sub.name):"Removed subject")+'</b><div class="mu">'+fmt(z.start)+' – '+fmt(z.end)+'</div></div><button class="x" data-act="delslot" data-id="'+z.id+'">Delete</button></div>';
+    });
+    w+='</div>';
+  });
+  document.getElementById("week").innerHTML=w;
+}
+function ctr(x,k,l){
+  return '<div class="st"><b>'+x[k]+'</b><span class="mu">'+l+'</span><div class="ctr"><button data-act="inc" data-id="'+x.id+'" data-k="'+k+'" data-d="-1" aria-label="Decrease '+l+'">−</button><button data-act="inc" data-id="'+x.id+'" data-k="'+k+'" data-d="1" aria-label="Increase '+l+'">+</button></div></div>';
+}
+function subOf(id){return S.subjects.filter(function(x){return x.id==id;})[0];}
+function byTime(a,b){return a.start<b.start?-1:a.start>b.start?1:0;}
+
+document.addEventListener("click",function(e){
+  var b=e.target.closest("[data-act]");if(!b)return;
+  var act=b.dataset.act,id=b.dataset.id,x;
+  if(act==="tab"){
+    document.getElementById("A").classList.toggle("hide",b.dataset.t!=="A");
+    document.getElementById("T").classList.toggle("hide",b.dataset.t!=="T");
+    document.getElementById("tA").classList.toggle("on",b.dataset.t==="A");
+    document.getElementById("tT").classList.toggle("on",b.dataset.t==="T");
+    return;
+  }
+  if(act==="addsub"){
+    var inp=document.getElementById("subName"),n=inp.value.trim();
+    if(!n){inp.focus();return;}
+    S.subjects.push({id:Date.now(),name:n,a:0,s:0,c:0});inp.value="";
+  }else if(act==="delsub"){
+    x=subOf(id);
+    if(!x||!confirm("Remove "+x.name+" and all its attendance data and timetable slots?"))return;
+    S.subjects=S.subjects.filter(function(y){return y.id!=id;});
+    S.slots=S.slots.filter(function(z){return z.sid!=id;});
+  }else if(act==="inc"||act==="mark"){
+    x=subOf(id);if(!x)return;
+    var d=act==="mark"?1:+b.dataset.d,k=b.dataset.k;
+    x[k]=Math.max(0,x[k]+d);
+  }else if(act==="addslot"){
+    var sid=document.getElementById("slSub").value,st=document.getElementById("slStart").value,en=document.getElementById("slEnd").value;
+    if(!sid||!st||!en){alert("Pick a subject and both times.");return;}
+    if(en<=st){alert("End time must be after start time.");return;}
+    S.slots.push({id:Date.now(),day:+document.getElementById("slDay").value,start:st,end:en,sid:+sid});
+  }else if(act==="delslot"){
+    S.slots=S.slots.filter(function(z){return z.id!=id;});
+  }
+  save();render();
+});
+document.addEventListener("change",function(e){
+  if(e.target.dataset.act==="target"){S.target=+e.target.value;save();render();}
+});
+document.getElementById("subName").addEventListener("keydown",function(e){
+  if(e.key==="Enter")document.querySelector('[data-act="addsub"]').click();
+});
+render();
+</script>
+</body>
+</html>
